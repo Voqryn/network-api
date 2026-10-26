@@ -1,7 +1,9 @@
 """HTTP entry point for the Voqryn Network API."""
 from fastapi import FastAPI
+from voqryn_network_api.dns import router as dns_router
 
 app = FastAPI(title="Voqryn Network API", version="0.1.0", docs_url="/docs")
+app.include_router(dns_router)
 
 
 @app.get("/healthz", tags=["operations"])
