@@ -7,14 +7,14 @@ from pathlib import Path
 
 
 @lru_cache(maxsize=1)
-def _dataset() -> tuple[tuple[object, dict], ...]:
+def _dataset() -> dict[tuple[int, int, int], dict]:
     path = os.getenv("VOQRYN_IP_DATASET")
     if not path:
-        return ()
+        return {}
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     if not isinstance(data, list) or len(data) > 100000:
         raise ValueError("IP dataset must be a bounded JSON list")
-    records = []
+    records = {}
     for entry in data:
         if not isinstance(entry, dict):
             raise ValueError("invalid IP dataset entry")
@@ -28,8 +28,8 @@ def _dataset() -> tuple[tuple[object, dict], ...]:
             raise ValueError("invalid ASN")
         if provider is not None and (not isinstance(provider, str) or len(provider) > 200):
             raise ValueError("invalid provider")
-        records.append((network, {"country": country.upper() if country else None, "asn": asn, "provider": provider}))
-    return tuple(records)
+        records[(network.version, network.prefixlen, int(network.network_address))] = {"country": country.upper() if country else None, "asn": asn, "provider": provider}
+    return records
 
 
 def lookup(ip: str) -> dict:
@@ -37,8 +37,12 @@ def lookup(ip: str) -> dict:
     address = ip_address(ip)
     if not address.is_global:
         return {"available": False, "country": None, "asn": None, "provider": None}
-    matches = [(net.prefixlen, details) for net, details in _dataset() if address in net]
-    if not matches:
-        return {"available": False, "country": None, "asn": None, "provider": None}
-    details = max(matches, key=lambda item: item[0])[1]
-    return {"available": True, **details}
+    records = _dataset()
+    bits = address.max_prefixlen
+    value = int(address)
+    for prefix in range(bits, -1, -1):
+        mask = ((1 << bits) - 1) ^ ((1 << (bits - prefix)) - 1)
+        details = records.get((address.version, prefix, value & mask))
+        if details is not None:
+            return {"available": True, **details}
+    return {"available": False, "country": None, "asn": None, "provider": None}
