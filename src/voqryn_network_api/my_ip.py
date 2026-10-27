@@ -1,7 +1,10 @@
 """Return the directly connected peer IP, without trusting spoofable forwarding headers."""
+import logging
 from ipaddress import ip_address
 from fastapi import APIRouter, Request
 from voqryn_network_api.ip_intelligence import lookup
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1/ip", tags=["ip"])
 
@@ -25,4 +28,9 @@ def my_ip_details(request: Request) -> dict:
     basic = my_ip(request)
     if basic["status"] != "ok":
         return {**basic, "intelligence": {"available": False, "country": None, "asn": None, "provider": None}}
-    return {**basic, "intelligence": lookup(basic["ip"])}
+    try:
+        intelligence = lookup(basic["ip"])
+    except (OSError, ValueError, KeyError, TypeError, UnicodeError):
+        logger.exception("Local IP intelligence dataset unavailable or invalid")
+        intelligence = {"available": False, "country": None, "asn": None, "provider": None}
+    return {**basic, "intelligence": intelligence}
